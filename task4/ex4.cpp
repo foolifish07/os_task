@@ -25,8 +25,15 @@ HANDLE mutex = CreateSemaphore( NULL,1,1,"mutex" );
 HANDLE full = CreateSemaphore( NULL,0,N,"full" );
 HANDLE empty = CreateSemaphore( NULL,N,N,"empty" );
 
+int consumer_count = 0;
+CRITICAL_SECTION  consumer;
+int producer_count = 0;
+CRITICAL_SECTION  producer;
+
 void init(){
 	in = out = 0;
+	InitializeCriticalSection(&consumer);	
+	InitializeCriticalSection(&producer);	
 }
 int P(HANDLE &mutex){
 	WaitForSingleObject( mutex,-1);
@@ -102,10 +109,12 @@ void task4( char* file )
 		if(thread_info[i].entity == 'D' || thread_info[1].entity == 'd')
 		{
 		// Create Display thread
+			producer_count++;
 	    	h_Thread[i] = CreateThread( NULL, 0, (LPTHREAD_START_ROUTINE)(DisplayThread), &thread_info[i], 0, &thread_ID);
 		}	
 		else {
 		// Create Writer thread
+			consumer_count++;
 	   		h_Thread[i] = CreateThread( NULL, 0, (LPTHREAD_START_ROUTINE)(WriterThread), &thread_info[i], 0, &thread_ID);
 		}
 	} //end for
@@ -123,7 +132,7 @@ void DisplayThread(void* p)
 	int b = ((ThreadInfo*) (p)) -> b;
 
 	for(int i=1;i<=a;i++){
-
+		if ( consumer_count==0 ) break;
 		P(full);
 		P(mutex);
 
@@ -134,6 +143,10 @@ void DisplayThread(void* p)
 		V(mutex);
 		V(empty);
 	}
+
+	EnterCriticalSection( &producer );
+	producer_count--;
+	LeaveCriticalSection( &producer );
 }
 
 bool isprime(int x){
@@ -154,15 +167,21 @@ void WriterThread(void* p)
 	for(int i=a;i<=b;i++){
 		if ( !isprime(i) ) continue;
 
+		if ( producer_count==0 ) break;
+
 		P(empty);
 		P(mutex);
 
 		prime[in] = i;
 		in = (in+1)%N;
-		//printf("I'm producer %d , I get prime %d with in = %d.\n" , m_serial , i,in );
+		printf("I'm producer %d , I get prime %d with in = %d.\n" , m_serial , i,in );
 		Sleep(a*100);
 		
 		V(mutex);
 		V(full);
 	}
+
+	EnterCriticalSection( &consumer );
+	consumer--;
+	LeaveCriticalSection( &consumer );
 }
