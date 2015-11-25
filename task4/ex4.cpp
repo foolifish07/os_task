@@ -182,6 +182,6 @@ void WriterThread(void* p)
 	}
 
 	EnterCriticalSection( &consumer );
-	consumer--;
+	consumer_count--;
 	LeaveCriticalSection( &consumer );
 }
