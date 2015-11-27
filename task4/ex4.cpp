@@ -3,6 +3,7 @@
 #include <fstream>
 #include <stdio.h>
 #include <cmath>
+#include <iostream>
 
 #define INTE_PER_SEC  1000
 #define MAX_THREAD_NUM  64
@@ -25,20 +26,17 @@ HANDLE mutex = CreateSemaphore( NULL,1,1,"mutex" );
 HANDLE full = CreateSemaphore( NULL,0,N,"full" );
 HANDLE empty = CreateSemaphore( NULL,N,N,"empty" );
 
-int consumer_count = 0;
-CRITICAL_SECTION  consumer;
-int producer_count = 0;
-CRITICAL_SECTION  producer;
+int consumer_count = 0, producer_count = 0;
+int waittime = 100;
 
 void init(){
 	in = out = 0;
-	InitializeCriticalSection(&consumer);	
-	InitializeCriticalSection(&producer);	
+	consumer_count = producer_count = 0;
 }
-int P(HANDLE &mutex){
-	WaitForSingleObject( mutex,-1);
+int P(HANDLE &mutex ){
+	WaitForSingleObject( mutex, -1);
 }
-int V(HANDLE &mutex){
+int V(HANDLE &mutex ){
 	ReleaseSemaphore( mutex , 1, NULL );
 }
 
@@ -83,6 +81,8 @@ int main( int agrc, char* argv[] )
 
 void task4( char* file )
 {
+	init();
+
 	DWORD n_thread = 0;
 	DWORD thread_ID;
 	DWORD wait_for_all;
@@ -104,17 +104,21 @@ void task4( char* file )
 		inFile>>thread_info[n_thread++].b;
 		inFile.get();
 	} //end while
+
+	for( int i = 0; i < (int)(n_thread); i++)
+	{
+		if(thread_info[i].entity == 'D' || thread_info[1].entity == 'd')
+			producer_count++;
+		else 
+			consumer_count++;
+	} //end for
 	for( int i = 0; i < (int)(n_thread); i++)
 	{
 		if(thread_info[i].entity == 'D' || thread_info[1].entity == 'd')
 		{
-		// Create Display thread
-			producer_count++;
 	    	h_Thread[i] = CreateThread( NULL, 0, (LPTHREAD_START_ROUTINE)(DisplayThread), &thread_info[i], 0, &thread_ID);
 		}	
 		else {
-		// Create Writer thread
-			consumer_count++;
 	   		h_Thread[i] = CreateThread( NULL, 0, (LPTHREAD_START_ROUTINE)(WriterThread), &thread_info[i], 0, &thread_ID);
 		}
 	} //end for
@@ -133,20 +137,25 @@ void DisplayThread(void* p)
 
 	for(int i=1;i<=a;i++){
 		if ( consumer_count==0 ) break;
-		P(full);
+
+		while (1){
+			if ( WaitForSingleObject( full, waittime )==WAIT_TIMEOUT ){
+				if ( producer_count==0 ){
+					consumer_count--;
+					return;
+				}
+			}
+			else break;
+		}
 		P(mutex);
 
 		printf("I'm comsumer %d , I get prime %d with out = %d.\n" , m_serial , prime[out] ,out );
 		out = (out+1)%N;
-		Sleep(a*100);
-		
+
 		V(mutex);
 		V(empty);
 	}
-
-	EnterCriticalSection( &producer );
-	producer_count--;
-	LeaveCriticalSection( &producer );
+	consumer_count--;	
 }
 
 bool isprime(int x){
@@ -167,21 +176,23 @@ void WriterThread(void* p)
 	for(int i=a;i<=b;i++){
 		if ( !isprime(i) ) continue;
 
-		if ( producer_count==0 ) break;
-
-		P(empty);
+		while (1){
+			if ( WaitForSingleObject( empty, waittime )==WAIT_TIMEOUT ){
+				if ( consumer_count==0 ){
+					producer_count--;
+					return;
+				}
+			}
+			else break;
+		}
 		P(mutex);
 
 		prime[in] = i;
 		in = (in+1)%N;
 		printf("I'm producer %d , I get prime %d with in = %d.\n" , m_serial , i,in );
-		Sleep(a*100);
-		
+				
 		V(mutex);
 		V(full);
 	}
-
-	EnterCriticalSection( &consumer );
-	consumer_count--;
-	LeaveCriticalSection( &consumer );
+	producer_count--;
 }
